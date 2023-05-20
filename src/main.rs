@@ -1,8 +1,8 @@
 use std::ops;
-use std::collections::LinkedList;
 use std::path::Path;
 use std::fs::File;
 use std::io::BufWriter;
+use std::time::Instant;
 
 
 static  MAX_ITER: u32 = 100;
@@ -17,8 +17,8 @@ struct Complex{
 
 impl Complex {
 
-    fn magnitude(&self) -> f64 {
-        f64::sqrt(self.x*self.x +self. y*self.y) 
+    fn square(&self) -> f64 {
+        self.x*self.x +self. y*self.y
     }
 
 }
@@ -93,9 +93,9 @@ impl  MandleBrotPoint
                 
                 let new_z: Complex = &z*&z + &c;
                 let iterations: i16 = iterations+1;
-                let magnitude: f64 = new_z.magnitude();
+                let magnitude: f64 = new_z.square();
                 
-                if  magnitude >2.0 {
+                if  magnitude >4.0 {
                     return  MandleBrotPoint::Color { iterations: iterations,
                         coord:coord };
                 }
@@ -117,34 +117,23 @@ impl  MandleBrotPoint
 }
 
 
-fn color_map(iteration:i16) -> (u8,u8,u8){
-    let mut r:u8 = 0;
-    let mut g:u8 = 0;
-    let mut b:u8 = 0;
+fn color_map(iteration:i16) -> (u8,u8,u8,u8){
+    let mut r:u8 = 255;
+    let mut g:u8 = 255;
+    let mut b:u8 = 255;
+    let mut a:u8 = 255;
     if iteration == -1{
-        return  (r,g,b);
+        // this means its part of the set.
+        return  (r,g,b,a);
+    }
+    else if iteration >MAX_ITER as i16{
+        return  (r,g,b,a);
     }
     else {
-        let iteration:u8 = iteration as u8;
-        if iteration >= MAX_ITER as u8{
-            (r,g,b) = (0,0,0);
-        }
-        else if iteration < MAX_ITER as u8 && iteration > 60{
-            // bluish tint.
-            (r,g,b) = (34-iteration/3,255-iteration,221+iteration/3)
-        }
-        else if iteration <= 60 && iteration > 30{
-            // greenish tint
-            (r,g,b) = (120-iteration,194+iteration,160-iteration)
-        }
-        else if iteration <= 30 && iteration > 9 {
-            // redish tint
-            (r,g,b) = (224+iteration,198-2*iteration,160-2*iteration)
-        }
-        else {
-            (r,g,b) = (255-iteration,2*iteration,2*iteration)
-        }
-        return  (r,g,b);
+        let iteration_normailsed:f32 = (iteration as f32)/(MAX_ITER as f32);
+        let iteration:u8 = (255.0*iteration_normailsed) as u8;
+        (r,g,b,a) =(iteration,iteration,iteration,255);
+        return  (r,g,b,a);
     }
 }
 
@@ -164,47 +153,38 @@ fn get_mandlebrot_point(i:usize,j:usize) -> MandleBrotPoint{
 
 fn main(){
     println!("Start");
+    let now = Instant::now();
     let mut pixels: Vec<u8> = vec![0; SIZE*SIZE*RGBA];
-    let mut mandle_brot_set:LinkedList<MandleBrotPoint> = LinkedList::new();
-    let mut mandle_brot_set_second:LinkedList<MandleBrotPoint> = LinkedList::new();
-    println!("it gets here!");
+   
     for i in 0..SIZE{
         for j in 0..SIZE{
-            mandle_brot_set.push_front(get_mandlebrot_point(i,j));
-        }
-    }
-
-    for i in 0..MAX_ITER+1{
-        println!("{i}");
-        while !mandle_brot_set.is_empty() {
-            match mandle_brot_set.pop_back(){
-                Some(val)=>{
-                    match val {
-                        MandleBrotPoint::Point {..}=>{
-                                
-                            mandle_brot_set_second.push_back(val.next_point());
-
-                            }
-                        MandleBrotPoint::Color { iterations,coord }=>{
-                            let (r,g,b) = color_map(iterations);
-                            let (x,y) = coord;
-                            pixels[y*(RGBA*SIZE) + RGBA*x ] = r ;
-                            pixels[y*(RGBA*SIZE) + RGBA*x +1] = g ;
-                            pixels[y*(RGBA*SIZE) + RGBA*x +2] = b ;
-                            pixels[y*(RGBA*SIZE) + RGBA*x +3] = 255 ;
-                        }
-                        }
+            let mut mandle_brot = get_mandlebrot_point(i,j);
+            loop {
+                match mandle_brot{
+                    MandleBrotPoint::Point {..}=>{
+                        mandle_brot = mandle_brot.next_point();
                     }
-                None=>{
-                    break;
+                    MandleBrotPoint::Color { iterations, 
+                        coord }=>{
+                        let (r,g,b,a) = color_map(iterations);
+                        let (x,y) = coord;
+                        pixels[y*(RGBA*SIZE) + RGBA*x ] = r ;
+                        pixels[y*(RGBA*SIZE) + RGBA*x +1] = g ;
+                        pixels[y*(RGBA*SIZE) + RGBA*x +2] = b ;
+                        pixels[y*(RGBA*SIZE) + RGBA*x +3] = a ;
+                        break;
+                    }
                 }
-            
+
             }
 
         }
-
-        (mandle_brot_set_second,mandle_brot_set) = (mandle_brot_set,mandle_brot_set_second);
     }
+
+    let elapsed: f32 = now.elapsed().as_millis() as f32 / 1000.0;
+    println!("Algorithm over{}",elapsed);
+
+
 
 
 
@@ -227,8 +207,9 @@ fn main(){
     let mut writer = encoder.write_header().unwrap();
     writer.write_image_data(&pixels).unwrap(); // Save
 
+    let elapsed: f32 = now.elapsed().as_millis() as f32 / 1000.0;
 
-
+    println!("Save image over{}",elapsed);
     }
 
 
