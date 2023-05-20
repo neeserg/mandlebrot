@@ -1,12 +1,14 @@
 use std::ops;
-use std::convert::TryFrom;
+use std::collections::LinkedList;
+use std::path::Path;
+use std::fs::File;
+use std::io::BufWriter;
 
 
 static  MAX_ITER: u32 = 100;
 const   SIZE: usize = 10000;
-static CENTER:(f64,f64) = (0.0,0.0);
 static ZOOM: f64 = 2.0;
-
+static RGBA: usize = 4;
 
 struct Complex{
     x: f64,
@@ -15,11 +17,8 @@ struct Complex{
 
 impl Complex {
 
-    fn conjugate(&self) ->Complex{
-        Complex{x:self.x,y:self.y}
-    }
     fn magnitude(&self) -> f64 {
-        self.x*self.x +self. y*self.y
+        f64::sqrt(self.x*self.x +self. y*self.y) 
     }
 
 }
@@ -78,16 +77,16 @@ enum MandleBrotPoint {
     Point{ z: Complex,
         iterations:i16,
         c:Complex,
-        coord: (u32,u32)},
+        coord: (usize,usize)},
     Color{
         iterations:i16,
-        coord: (u32,u32)}
+        coord: (usize,usize)}
 }
 
 impl  MandleBrotPoint
  {
-    fn nextPoint(point: MandleBrotPoint) -> MandleBrotPoint{
-        match point {
+    fn next_point(self) -> MandleBrotPoint{
+        match self {
             MandleBrotPoint::Point{z,
                 iterations,c,coord} =>{
                 
@@ -96,11 +95,11 @@ impl  MandleBrotPoint
                 let iterations: i16 = iterations+1;
                 let magnitude: f64 = new_z.magnitude();
                 
-                if iterations >= MAX_ITER as i16 || magnitude >2.0 {
+                if  magnitude >2.0 {
                     return  MandleBrotPoint::Color { iterations: iterations,
                         coord:coord };
                 }
-                else if magnitude < 1.0 {
+                else if iterations >= MAX_ITER as i16 {
                     return  MandleBrotPoint::Color { iterations: -1,
                         coord:coord};
                 }
@@ -111,7 +110,7 @@ impl  MandleBrotPoint
                 }
             }
             MandleBrotPoint::Color{..}=>{
-                return  point;
+                return  self;
             }
         }
     }
@@ -127,21 +126,109 @@ fn color_map(iteration:i16) -> (u8,u8,u8){
     }
     else {
         let iteration:u8 = iteration as u8;
-        let MAX_ITER: u8 = MAX_ITER as u8;
-        if iteration == MAX_ITER{
-            (r,g,b) = (255,255,255);
+        if iteration >= MAX_ITER as u8{
+            (r,g,b) = (0,0,0);
         }
-        else if iteration < MAX_ITER && iteration > 60{
-            let iter_share: u8 = (iteration-60)/3;
-            (r,g,b) = (0+iter_share,255-iter_share,221+iter_share)
+        else if iteration < MAX_ITER as u8 && iteration > 60{
+            // bluish tint.
+            (r,g,b) = (34-iteration/3,255-iteration,221+iteration/3)
+        }
+        else if iteration <= 60 && iteration > 30{
+            // greenish tint
+            (r,g,b) = (120-iteration,194+iteration,160-iteration)
+        }
+        else if iteration <= 30 && iteration > 9 {
+            // redish tint
+            (r,g,b) = (224+iteration,198-2*iteration,160-2*iteration)
+        }
+        else {
+            (r,g,b) = (255-iteration,2*iteration,2*iteration)
         }
         return  (r,g,b);
     }
 }
 
-fn main(){
-    let mut PIXELS: [u8;SIZE*SIZE*3] = [0; SIZE*SIZE*3];
 
+
+
+
+fn get_mandlebrot_point(i:usize,j:usize) -> MandleBrotPoint{
+    let mut x = i as f64;
+    let mut y = j as f64;
+    let size_convert = SIZE as f64;
+    x = (x/size_convert)*(ZOOM*2.0)-ZOOM;
+    y = ZOOM-(y/size_convert)*(ZOOM*2.0);
+    return  MandleBrotPoint::Point { z: Complex { x: 0.0, y: 0.0 }
+        , iterations: 0, c: Complex { x: x, y: y }, coord: (i,j) };
 }
+
+fn main(){
+    println!("Start");
+    let mut pixels: Vec<u8> = vec![0; SIZE*SIZE*RGBA];
+    let mut mandle_brot_set:LinkedList<MandleBrotPoint> = LinkedList::new();
+    let mut mandle_brot_set_second:LinkedList<MandleBrotPoint> = LinkedList::new();
+    println!("it gets here!");
+    for i in 0..SIZE{
+        for j in 0..SIZE{
+            mandle_brot_set.push_front(get_mandlebrot_point(i,j));
+        }
+    }
+
+    for i in 0..MAX_ITER+1{
+        println!("{i}");
+        while !mandle_brot_set.is_empty() {
+            match mandle_brot_set.pop_back(){
+                Some(val)=>{
+                    match val {
+                        MandleBrotPoint::Point {..}=>{
+                                
+                            mandle_brot_set_second.push_back(val.next_point());
+
+                            }
+                        MandleBrotPoint::Color { iterations,coord }=>{
+                            let (r,g,b) = color_map(iterations);
+                            let (x,y) = coord;
+                            pixels[y*(RGBA*SIZE) + RGBA*x ] = r ;
+                            pixels[y*(RGBA*SIZE) + RGBA*x +1] = g ;
+                            pixels[y*(RGBA*SIZE) + RGBA*x +2] = b ;
+                            pixels[y*(RGBA*SIZE) + RGBA*x +3] = 255 ;
+                        }
+                        }
+                    }
+                None=>{
+                    break;
+                }
+            
+            }
+
+        }
+
+        (mandle_brot_set_second,mandle_brot_set) = (mandle_brot_set,mandle_brot_set_second);
+    }
+
+
+
+    let path = Path::new(r"mandlebrot.png");
+    let file = File::create(path).unwrap();
+    let ref mut w = BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, SIZE as u32, SIZE as u32); // Width is 2 pixels and height is 1.
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455)); // 1.0 / 2.2, scaled by 100000
+    encoder.set_source_gamma(png::ScaledFloat::new(1.0 / 2.2));     // 1.0 / 2.2, unscaled, but rounded
+    let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
+        (0.31270, 0.32900),
+        (0.64000, 0.33000),
+        (0.30000, 0.60000),
+        (0.15000, 0.06000)
+    );
+    encoder.set_source_chromaticities(source_chromaticities);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&pixels).unwrap(); // Save
+
+
+
+    }
 
 
