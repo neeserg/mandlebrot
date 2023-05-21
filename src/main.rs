@@ -9,7 +9,7 @@ static  MAX_ITER: u32 = 100;
 const   SIZE: usize = 10000;
 static ZOOM: f64 = 2.0;
 static RGBA: usize = 4;
-
+static NUM_TRIALS:u8 = 5;
 struct Complex{
     x: f64,
     y:f64
@@ -118,6 +118,7 @@ impl  MandleBrotPoint
 
 
 fn color_map(iteration:i16) -> (u8,u8,u8,u8){
+    //Custom color map for mandlebrot.
     let mut r:u8 = 255;
     let mut g:u8 = 255;
     let mut b:u8 = 255;
@@ -142,6 +143,7 @@ fn color_map(iteration:i16) -> (u8,u8,u8,u8){
 
 
 fn get_mandlebrot_point(i:usize,j:usize) -> MandleBrotPoint{
+    // Gets a Complex number wrapped in MandleBrotEnum
     let mut x = i as f64;
     let mut y = j as f64;
     let size_convert = SIZE as f64;
@@ -151,11 +153,30 @@ fn get_mandlebrot_point(i:usize,j:usize) -> MandleBrotPoint{
         , iterations: 0, c: Complex { x: x, y: y }, coord: (i,j) };
 }
 
-fn main(){
-    println!("Start");
-    let now = Instant::now();
+fn save_image(pixels :Vec<u8>){
+    // saves the image to a file.
+    let path = Path::new(r"mandlebrot.png");
+    let file = File::create(path).unwrap();
+    let ref mut w = BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, SIZE as u32, SIZE as u32); // Width is 2 pixels and height is 1.
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455)); // 1.0 / 2.2, scaled by 100000
+    encoder.set_source_gamma(png::ScaledFloat::new(1.0 / 2.2));     // 1.0 / 2.2, unscaled, but rounded
+    let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
+        (0.31270, 0.32900),
+        (0.64000, 0.33000),
+        (0.30000, 0.60000),
+        (0.15000, 0.06000)
+    );
+    encoder.set_source_chromaticities(source_chromaticities);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&pixels).unwrap(); // Save
+}
+
+fn mandlebrot_algrithm(){
     let mut pixels: Vec<u8> = vec![0; SIZE*SIZE*RGBA];
-   
     for i in 0..SIZE{
         for j in 0..SIZE{
             let mut mandle_brot = get_mandlebrot_point(i,j);
@@ -180,36 +201,29 @@ fn main(){
 
         }
     }
+    save_image(pixels);
 
-    let elapsed: f32 = now.elapsed().as_millis() as f32 / 1000.0;
-    println!("Algorithm over{}",elapsed);
+}
+fn main(){
+    let now = Instant::now();
+
+    for i in 0..NUM_TRIALS{
+        let trial_before = Instant::now();
+        mandlebrot_algrithm();
+        let trial_duration:f32 = trial_before.elapsed().as_secs_f32();
+        println!("Trial number {} finishes in: {} minutes {} seconds",i,(trial_duration as u32)/60,trial_duration%60.0);
+    }
+    
+    let elapsed: f32 = now.elapsed().as_secs_f32();
+    let elapsed_average: f32 = now.elapsed().as_secs_f32()/(NUM_TRIALS as f32);
+    println!("Total time elapsed is: {} minutes {} seconds",(elapsed as u32)/60,elapsed%60.0);
+    println!("Average seconds is: is: {} minutes {} seconds",(elapsed_average as u32)/60,elapsed_average%60.0);
 
 
 
 
+    
 
-    let path = Path::new(r"mandlebrot.png");
-    let file = File::create(path).unwrap();
-    let ref mut w = BufWriter::new(file);
-
-    let mut encoder = png::Encoder::new(w, SIZE as u32, SIZE as u32); // Width is 2 pixels and height is 1.
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455)); // 1.0 / 2.2, scaled by 100000
-    encoder.set_source_gamma(png::ScaledFloat::new(1.0 / 2.2));     // 1.0 / 2.2, unscaled, but rounded
-    let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
-        (0.31270, 0.32900),
-        (0.64000, 0.33000),
-        (0.30000, 0.60000),
-        (0.15000, 0.06000)
-    );
-    encoder.set_source_chromaticities(source_chromaticities);
-    let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(&pixels).unwrap(); // Save
-
-    let elapsed: f32 = now.elapsed().as_millis() as f32 / 1000.0;
-
-    println!("Save image over{}",elapsed);
     }
 
 
